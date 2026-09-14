@@ -6,6 +6,7 @@ import "./App.css";
 function App() {
   const [currentTrack, setCurrentTrack] = useState(tracks[0]);
   const [walletAddress, setWalletAddress] = useState("");
+  const [isSettling, setIsSettling] = useState(false);
 
   async function connectWallet() {
     if (!window.ethereum) {
@@ -24,11 +25,34 @@ function App() {
     }
   }
 
-  function handleTriggerPayout(data) {
-    console.log("PAYOUT TRIGGER:", data);
+  async function handleTriggerPayout(data) {
+    console.log("PAYOUT TRIGGER RECEIVED:", data);
+    setIsSettling(true);
 
-    // Yash will later connect this
-    // function to RoyaltyDistributor.sol
+    try {
+      const response = await fetch("http://localhost:3001/api/settle", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          trackId: data.trackId,
+          listenCount: data.listenCount,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Settlement failed");
+      }
+
+      console.log("Settlement transaction mined:", result.txHash);
+    } catch (error) {
+      console.error("Platform settlement relay failed:", error);
+    } finally {
+      setIsSettling(false);
+    }
   }
 
   return (
@@ -57,7 +81,7 @@ function App() {
               <p>{track.artist}</p>
             </div>
 
-            <button>Select</button>
+            <button type="button">Select</button>
           </div>
         ))}
       </main>
@@ -69,6 +93,11 @@ function App() {
           payoutThreshold={10}
           onTriggerPayout={handleTriggerPayout}
         />
+        {isSettling && (
+          <p className="settling-indicator">
+            Batch settlement processing on-chain...
+          </p>
+        )}
       </div>
     </div>
   );

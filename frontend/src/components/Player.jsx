@@ -1,11 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-
 import { useAntiSpoofing } from "../hooks/useAntiSpoofing";
 
 export default function Player({
   track,
   walletAddress,
-  payoutThreshold = 10,
+  payoutThreshold = 5, // 5 qualified streams triggers the batch payout
   onTriggerPayout,
 }) {
   const audioRef = useRef(null);
@@ -15,18 +14,24 @@ export default function Player({
   const [duration, setDuration] = useState(0);
   const [qualifiedPlays, setQualifiedPlays] = useState(0);
 
-  const { listenSeconds, qualified, blocked, reset, handleTimeUpdate } =
-    useAntiSpoofing({
-      walletAddress,
-      track,
-      onQualifiedPlay: handleQualifiedPlay,
-    });
+  const {
+    listenSeconds,
+    qualified,
+    monetizationExhausted,
+    reset,
+    handleTimeUpdate,
+  } = useAntiSpoofing({
+    walletAddress,
+    track,
+    onQualifiedPlay: handleQualifiedPlay,
+  });
 
+  // Reset playback and qualification state whenever the active song changes
   useEffect(() => {
     reset();
-
     setCurrentTime(0);
     setIsPlaying(false);
+    setQualifiedPlays(0);
 
     if (audioRef.current) {
       audioRef.current.pause();
@@ -35,38 +40,31 @@ export default function Player({
   }, [track.id, reset]);
 
   function handleQualifiedPlay({ walletAddress, track }) {
-    console.log("QUALIFIED PLAY", {
+    console.log("QUALIFIED PLAY RECORDED", {
       walletAddress,
       trackId: track.id,
       artist: track.artist,
     });
 
-    setQualifiedPlays((previous) => {
-      const next = previous + 1;
+    const nextCount = qualifiedPlays + 1;
 
-      if (next >= payoutThreshold && onTriggerPayout) {
+    if (nextCount >= payoutThreshold) {
+      if (onTriggerPayout) {
         onTriggerPayout({
+          trackId: track.id,
+          listenCount: nextCount,
           walletAddress,
-          track,
-          qualifiedPlays: next,
         });
       }
-
-      return next;
-    });
+      setQualifiedPlays(0); // Reset accumulator for the next payout batch
+    } else {
+      setQualifiedPlays(nextCount);
+    }
   }
 
   async function togglePlay() {
     const audio = audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    if (blocked) {
-      alert("This wallet has reached its 24-hour stream limit.");
-      return;
-    }
+    if (!audio) return;
 
     if (isPlaying) {
       audio.pause();
@@ -81,20 +79,14 @@ export default function Player({
 
   function handleLoadedMetadata() {
     const audio = audioRef.current;
-
-    if (!audio) {
-      return;
+    if (audio) {
+      setDuration(audio.duration);
     }
-
-    setDuration(audio.duration);
   }
 
   function handleTimeUpdateEvent() {
     const audio = audioRef.current;
-
-    if (!audio) {
-      return;
-    }
+    if (!audio) return;
 
     setCurrentTime(audio.currentTime);
     handleTimeUpdate(audio.currentTime);
@@ -102,26 +94,26 @@ export default function Player({
 
   function handleSeek(event) {
     const audio = audioRef.current;
+    if (!audio) return;
 
-    if (!audio) {
-      return;
-    }
-
-    audio.currentTime = Number(event.target.value);
+    const targetTime = Number(event.target.value);
+    audio.currentTime = targetTime;
+    setCurrentTime(targetTime);
   }
 
   function handleEnded() {
     setIsPlaying(false);
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+    }
+    setCurrentTime(0);
+    reset(); // Clear 30s listen progress so the next replay can qualify
   }
 
   function formatTime(seconds) {
-    if (!Number.isFinite(seconds)) {
-      return "0:00";
-    }
-
+    if (!Number.isFinite(seconds)) return "0:00";
     const minutes = Math.floor(seconds / 60);
     const remaining = Math.floor(seconds % 60);
-
     return `${minutes}:${String(remaining).padStart(2, "0")}`;
   }
 
@@ -148,7 +140,6 @@ export default function Player({
             className="player-cover"
           />
         )}
-
         <div>
           <h3>{track.title}</h3>
           <p>{track.artist}</p>
@@ -156,7 +147,7 @@ export default function Player({
       </div>
 
       <div className="player-controls">
-        <button onClick={togglePlay} disabled={blocked}>
+        <button type="button" onClick={togglePlay}>
           {isPlaying ? "Pause" : "Play"}
         </button>
 
@@ -175,18 +166,23 @@ export default function Player({
       </div>
 
       <div className="qualification">
-        <div>
-          Continuous listen: {Math.floor(listenSeconds)}
-          /30 seconds
-        </div>
-
+        <div>Continuous listen: {Math.floor(listenSeconds)} / 30 seconds</div>
         <progress value={qualificationProgress} max="100" />
 
-        {qualified && <div>✓ Qualified play</div>}
+        {qualified && (
+          <div className="status-success">✓ Qualified stream recorded</div>
+        )}
 
-        {blocked && <div>✕ Wallet stream limit reached</div>}
+        {monetizationExhausted && (
+          <div className="status-info">
+            ℹ 24h monetized stream limit reached for this track (Standard
+            playback active)
+          </div>
+        )}
 
-        <div>Qualified plays: {qualifiedPlays}</div>
+        <div>
+          Batch accumulator: {qualifiedPlays} / {payoutThreshold} plays
+        </div>
       </div>
     </div>
   );
