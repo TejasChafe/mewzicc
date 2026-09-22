@@ -1,122 +1,106 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useState } from "react";
+import Player from "./components/Player";
+import { tracks } from "./data/tracks";
+import "./App.css";
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [currentTrack, setCurrentTrack] = useState(tracks[0]);
+  const [walletAddress, setWalletAddress] = useState("");
+  const [isSettling, setIsSettling] = useState(false);
+
+  async function connectWallet() {
+    if (!window.ethereum) {
+      alert("Please install MetaMask.");
+      return;
+    }
+
+    try {
+      const accounts = await window.ethereum.request({
+        method: "eth_requestAccounts",
+      });
+
+      setWalletAddress(accounts[0]);
+    } catch (error) {
+      console.error("Wallet connection failed:", error);
+    }
+  }
+
+  async function handleTriggerPayout(data) {
+    console.log("PAYOUT TRIGGER RECEIVED:", data);
+    setIsSettling(true);
+
+    try {
+      const response = await fetch("http://localhost:3001/api/settle", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          trackId: data.trackId,
+          listenCount: data.listenCount,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Settlement failed");
+      }
+
+      console.log("Settlement transaction mined:", result.txHash);
+    } catch (error) {
+      console.error("Platform settlement relay failed:", error);
+    } finally {
+      setIsSettling(false);
+    }
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
+    <div className="app">
+      <header className="app-header">
+        <h1>Mewzicc</h1>
+
+        <button onClick={connectWallet}>
+          {walletAddress
+            ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
+            : "Connect Wallet"}
         </button>
-      </section>
+      </header>
 
-      <div className="ticks"></div>
+      <main className="track-list">
+        <h2>Music Library</h2>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+        {tracks.map((track) => (
+          <div
+            key={track.id}
+            className="track-card"
+            onClick={() => setCurrentTrack(track)}
+          >
+            <div>
+              <h3>{track.title}</h3>
+              <p>{track.artist}</p>
+            </div>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+            <button type="button">Select</button>
+          </div>
+        ))}
+      </main>
+
+      <div className="persistent-player">
+        <Player
+          track={currentTrack}
+          walletAddress={walletAddress}
+          payoutThreshold={10}
+          onTriggerPayout={handleTriggerPayout}
+        />
+        {isSettling && (
+          <p className="settling-indicator">
+            Batch settlement processing on-chain...
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
-export default App
+export default App;
