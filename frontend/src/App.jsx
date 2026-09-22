@@ -1,32 +1,17 @@
+// src/App.jsx
 import { useState } from "react";
 import Player from "./components/Player";
 import Dashboard from "./components/Dashboard";
 import { tracks } from "./data/tracks";
-import { Web3Provider } from "./context/Web3Context";
+import { Web3Provider, useWeb3 } from "./context/Web3Context";
 import "./App.css";
 
-function App() {
+function MainContent() {
   const [currentTrack, setCurrentTrack] = useState(tracks[0]);
-  const [walletAddress, setWalletAddress] = useState("");
   const [isSettling, setIsSettling] = useState(false);
   const [activeTab, setActiveTab] = useState("player");
 
-  async function connectWallet() {
-    if (!window.ethereum) {
-      alert("Please install MetaMask.");
-      return;
-    }
-
-    try {
-      const accounts = await window.ethereum.request({
-        method: "eth_requestAccounts",
-      });
-
-      setWalletAddress(accounts[0]);
-    } catch (error) {
-      console.error("Wallet connection failed:", error);
-    }
-  }
+  const { account, connectWallet, isConnecting } = useWeb3();
 
   async function handleTriggerPayout(data) {
     console.log("PAYOUT TRIGGER RECEIVED:", data);
@@ -59,74 +44,78 @@ function App() {
   }
 
   return (
-    <Web3Provider>
-      <div className="app">
-        <header className="app-header">
-          <h1>Mewzicc</h1>
+    <div className="app">
+      <header className="app-header">
+        <h1>Mewzicc</h1>
 
-          <nav className="tab-nav">
-            <button
-              onClick={() => setActiveTab("player")}
-              disabled={activeTab === "player"}
-            >
-              Player
-            </button>
-            <button
-              onClick={() => setActiveTab("dashboard")}
-              disabled={activeTab === "dashboard"}
-            >
-              Dashboard
-            </button>
-          </nav>
-
-          <button onClick={connectWallet}>
-            {walletAddress
-              ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-              : "Connect Wallet"}
+        <nav className="tab-nav">
+          <button
+            onClick={() => setActiveTab("player")}
+            disabled={activeTab === "player"}
+          >
+            Player
           </button>
-        </header>
+          <button
+            onClick={() => setActiveTab("dashboard")}
+            disabled={activeTab === "dashboard"}
+          >
+            Dashboard
+          </button>
+        </nav>
 
-        {activeTab === "player" && (
-          <>
-            <main className="track-list">
-              <h2>Music Library</h2>
+        <button onClick={connectWallet} disabled={isConnecting}>
+          {account
+            ? `${account.slice(0, 6)}...${account.slice(-4)}`
+            : isConnecting ? "Connecting..." : "Connect Wallet"}
+        </button>
+      </header>
 
-              {tracks.map((track) => (
-                <div
-                  key={track.id}
-                  className="track-card"
-                  onClick={() => setCurrentTrack(track)}
-                >
-                  <div>
-                    <h3>{track.title}</h3>
-                    <p>{track.artist}</p>
-                  </div>
+      {activeTab === "player" && (
+        <>
+          <main className="track-list">
+            <h2>Music Library</h2>
 
-                  <button type="button">Select</button>
+            {tracks.map((track) => (
+              <div
+                key={track.id}
+                className="track-card"
+                onClick={() => setCurrentTrack(track)}
+              >
+                <div>
+                  <h3>{track.title}</h3>
+                  <p>{track.artist}</p>
                 </div>
-              ))}
-            </main>
 
-            <div className="persistent-player">
-              <Player
-                track={currentTrack}
-                walletAddress={walletAddress}
-                payoutThreshold={10}
-                onTriggerPayout={handleTriggerPayout}
-              />
-              {isSettling && (
-                <p className="settling-indicator">
-                  Batch settlement processing on-chain...
-                </p>
-              )}
-            </div>
-          </>
-        )}
+                <button type="button">Select</button>
+              </div>
+            ))}
+          </main>
 
-        {activeTab === "dashboard" && <Dashboard />}
-      </div>
-    </Web3Provider>
+          <div className="persistent-player">
+            <Player
+              track={currentTrack}
+              walletAddress={account}
+              payoutThreshold={5}
+              onTriggerPayout={handleTriggerPayout}
+            />
+            {isSettling && (
+              <p className="settling-indicator">
+                Batch settlement processing on-chain...
+              </p>
+            )}
+          </div>
+        </>
+      )}
+
+      {activeTab === "dashboard" && <Dashboard />}
+    </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <Web3Provider>
+      <MainContent />
+    </Web3Provider>
+  );
+}
